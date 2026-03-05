@@ -238,3 +238,28 @@ class DB:
             (category_id, subcategory_id, tx_id)
         )
         self.conn.commit()
+
+    def bulk_update_category(self, tx_ids, category_id: Optional[int], subcategory_id: Optional[int]):
+        ids = [int(tx_id) for tx_id in tx_ids]
+        if not ids:
+            return
+        placeholders = ",".join(["?"] * len(ids))
+        self.conn.execute(
+            f"UPDATE transactions SET category_id=?, subcategory_id=? WHERE id IN ({placeholders})",
+            [category_id, subcategory_id, *ids]
+        )
+        self.conn.commit()
+
+    def find_similar_transaction_ids(self, tx_id: int):
+        row = self.conn.execute(
+            "SELECT voice_norm FROM transactions WHERE id=?",
+            (int(tx_id),)
+        ).fetchone()
+        if not row:
+            return []
+
+        results = self.conn.execute(
+            "SELECT id FROM transactions WHERE voice_norm=? AND id<>?",
+            (row["voice_norm"], int(tx_id))
+        ).fetchall()
+        return [int(r["id"]) for r in results]

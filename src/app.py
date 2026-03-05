@@ -1,11 +1,41 @@
 import sys
+from pathlib import Path
 from typing import Optional
 
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 from db import DB
 from ui.main_window import MainWindow
 
+LAST_PROJECT_FILE = Path.home() / ".famwallet_last_project"
+
+
+def get_last_project_path() -> Optional[str]:
+    if not LAST_PROJECT_FILE.exists():
+        return None
+    path = LAST_PROJECT_FILE.read_text(encoding="utf-8").strip()
+    if not path:
+        return None
+    return path if Path(path).exists() else None
+
+
+def save_last_project_path(path: str):
+    LAST_PROJECT_FILE.write_text(path, encoding="utf-8")
+
 def choose_db_path() -> Optional[str]:
+    last_path = get_last_project_path()
+    if last_path:
+        choice = QMessageBox.question(
+            None,
+            "Progetto",
+            f"Ho trovato l'ultimo progetto usato:\n{last_path}\n\nVuoi riaprirlo?",
+            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+            QMessageBox.Yes,
+        )
+        if choice == QMessageBox.Yes:
+            return last_path
+        if choice == QMessageBox.Cancel:
+            return None
+
     choice = QMessageBox.question(
         None,
         "Progetto",
@@ -44,6 +74,7 @@ def main():
 
     db = DB(path)
     db.init_schema()
+    save_last_project_path(path)
 
     w = MainWindow(db)
     w.resize(1400, 850)
