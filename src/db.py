@@ -1,5 +1,6 @@
 import sqlite3
 from datetime import datetime
+from typing import Optional
 
 SCHEMA_SQL = """
 PRAGMA foreign_keys=ON;
@@ -134,7 +135,7 @@ class DB:
         )
         self.conn.commit()
 
-    def get_alias(self, voice_norm: str, detail_norm: str) -> str | None:
+    def get_alias(self, voice_norm: str, detail_norm: str) -> Optional[str]:
         row = self.conn.execute(
             "SELECT alias_value FROM voice_detail_aliases WHERE voice_norm=? AND detail_norm=?",
             (voice_norm, detail_norm)
@@ -189,7 +190,7 @@ class DB:
         self.conn.commit()
         return cur.rowcount == 1
 
-    def fetch_transactions(self, category_filter: int | None, uncategorized: bool, show_excluded: bool):
+    def fetch_transactions(self, category_filter: Optional[int], uncategorized: bool, show_excluded: bool):
         sql = """
         SELECT
           t.id,
@@ -231,7 +232,7 @@ class DB:
         )
         self.conn.commit()
 
-    def update_category(self, tx_id: int, category_id: int | None, subcategory_id: int | None):
+    def update_category(self, tx_id: int, category_id: Optional[int], subcategory_id: Optional[int]):
         self.conn.execute(
             "UPDATE transactions SET category_id=?, subcategory_id=? WHERE id=?",
             (category_id, subcategory_id, tx_id)
