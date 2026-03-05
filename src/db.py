@@ -75,7 +75,7 @@ class DB:
 
     def _seed_defaults(self):
         cur = self.conn.cursor()
-        for name in ["Alimentari", "Casa"]:
+        for name in ["Alimentari", "Casa", "Escludi"]:
             cur.execute("INSERT OR IGNORE INTO categories(name, active) VALUES(?, 1)", (name,))
         self.conn.commit()
 
@@ -247,6 +247,17 @@ class DB:
         self.conn.execute(
             f"UPDATE transactions SET category_id=?, subcategory_id=? WHERE id IN ({placeholders})",
             [category_id, subcategory_id, *ids]
+        )
+        self.conn.commit()
+
+    def bulk_update_excluded(self, tx_ids, excluded: bool):
+        ids = [int(tx_id) for tx_id in tx_ids]
+        if not ids:
+            return
+        placeholders = ",".join(["?"] * len(ids))
+        self.conn.execute(
+            f"UPDATE transactions SET excluded=? WHERE id IN ({placeholders})",
+            [1 if excluded else 0, *ids]
         )
         self.conn.commit()
 

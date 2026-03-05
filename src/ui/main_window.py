@@ -130,6 +130,7 @@ class MainWindow(QMainWindow):
         self.category_filter = None
         self.uncategorized_filter = False
         self.show_excluded = True
+        self.exclude_category_name = "Escludi"
 
         self.setWindowTitle(f"Spese (progetto: {db.path})")
 
@@ -211,9 +212,6 @@ class MainWindow(QMainWindow):
         self.btn_rename_sub = QPushButton("Rinomina sotto-categoria…")
         self.btn_rename_sub.clicked.connect(self.on_rename_subcategory)
 
-        self.chk_excl = QCheckBox("Escludi dal calcolo")
-        self.chk_excl.stateChanged.connect(self.on_excl_changed_from_panel)
-
         self.btn_apply = QPushButton("Applica categoria")
         self.btn_apply.clicked.connect(self.on_apply_category)
 
@@ -227,7 +225,6 @@ class MainWindow(QMainWindow):
         form.addRow("Sotto-categoria:", self.cmb_sub)
         form.addRow("", self.btn_add_sub)
         form.addRow("", self.btn_rename_sub)
-        form.addRow("", self.chk_excl)
         form.addRow("", self.btn_apply)
 
         splitter.addWidget(right)
@@ -307,6 +304,12 @@ class MainWindow(QMainWindow):
         self.refresh_stats(rows)
         self.refresh_chart(rows)
 
+    def _exclude_category_id(self):
+        for c in self.db.list_categories():
+            if c["name"] == self.exclude_category_name:
+                return int(c["id"])
+        return None
+
     def _selected_transaction_ids(self):
         indexes = self.table.selectionModel().selectedRows() if self.table.selectionModel() else []
         return [int(self.model.get_row(idx.row())["id"]) for idx in indexes]
@@ -381,10 +384,6 @@ class MainWindow(QMainWindow):
         alias = self.db.get_alias(row["voice_norm"], row["detail_norm"])
         self.txt_alias.setText(alias or "")
 
-        self.chk_excl.blockSignals(True)
-        self.chk_excl.setChecked(int(row["excluded"]) == 1)
-        self.chk_excl.blockSignals(False)
-
         cat_id = row["category_id"]
         sub_id = row["subcategory_id"]
 
@@ -404,13 +403,12 @@ class MainWindow(QMainWindow):
         tx_id = int(row["id"])
         excluded = int(row["excluded"]) == 1
         self.db.update_excluded(tx_id, excluded)
-        self.refresh_view()
-
-    def on_excl_changed_from_panel(self):
-        if not self.current_tx_id:
-            return
-        excluded = self.chk_excl.checkState() == Qt.Checked
-        self.db.update_excluded(self.current_tx_id, excluded)
+        exclude_category_id = self._exclude_category_id()
+        if exclude_category_id is not None:
+            if excluded:
+                self.db.update_category(tx_id, exclude_category_id, None)
+            elif row["category_id"] == exclude_category_id:
+                self.db.update_category(tx_id, None, None)
         self.refresh_view()
 
     def on_apply_category(self):
@@ -428,6 +426,12 @@ class MainWindow(QMainWindow):
 
         normalized_sub_id = int(sub_id) if sub_id is not None else None
         self.db.bulk_update_category(selected_ids, int(cat_id), normalized_sub_id)
+        exclude_category_id = self._exclude_category_id()
+        if exclude_category_id is not None:
+            if int(cat_id) == exclude_category_id:
+                self.db.bulk_update_excluded(selected_ids, True)
+            else:
+                self.db.bulk_update_excluded(selected_ids, False)
 
         if len(selected_ids) == 1:
             similar_ids = self.db.find_similar_transaction_ids(selected_ids[0])
