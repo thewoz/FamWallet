@@ -91,6 +91,13 @@ class DB:
         )
         self.conn.commit()
 
+    def rename_category(self, category_id: int, new_name: str):
+        self.conn.execute(
+            "UPDATE categories SET name=? WHERE id=?",
+            (new_name.strip(), category_id)
+        )
+        self.conn.commit()
+
     def list_subcategories(self, category_id: int):
         return self.conn.execute(
             "SELECT id, name FROM subcategories WHERE category_id=? AND active=1 ORDER BY name",
@@ -101,6 +108,13 @@ class DB:
         self.conn.execute(
             "INSERT OR IGNORE INTO subcategories(category_id, name, active) VALUES(?, ?, 1)",
             (category_id, name.strip())
+        )
+        self.conn.commit()
+
+    def rename_subcategory(self, subcategory_id: int, new_name: str):
+        self.conn.execute(
+            "UPDATE subcategories SET name=? WHERE id=?",
+            (new_name.strip(), subcategory_id)
         )
         self.conn.commit()
 
@@ -126,6 +140,13 @@ class DB:
             (voice_norm, detail_norm)
         ).fetchone()
         return row["alias_value"] if row else None
+
+    def rename_voice(self, tx_id: int, voice_raw: str, voice_norm: str):
+        self.conn.execute(
+            "UPDATE transactions SET voice_raw=?, voice_norm=? WHERE id=?",
+            (voice_raw.strip(), voice_norm, tx_id)
+        )
+        self.conn.commit()
 
     # ---------- transactions ----------
     def is_duplicate(self, date_value: str, voice_norm: str, detail_norm: str, amount_norm: str) -> bool:
