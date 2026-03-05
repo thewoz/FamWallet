@@ -1,9 +1,11 @@
 import sys
+from typing import Optional
+
 from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 from db import DB
 from ui.main_window import MainWindow
 
-def choose_db_path() -> str | None:
+def choose_db_path() -> Optional[str]:
     # Let user pick an existing .db or type a new one
     path, _ = QFileDialog.getSaveFileName(
         None,
