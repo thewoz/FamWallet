@@ -4,12 +4,14 @@ from PySide6.QtWidgets import (
     QLineEdit, QMessageBox, QInputDialog
 )
 from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex
+import sqlite3
 
 from db import DB
 from importer import preview_import
 from normalizer import normalize_text
 from charts import PieChartWidget, build_pie_by_category
 from ui.dialogs import DuplicatesPreviewDialog
+
 
 class TxTableModel(QAbstractTableModel):
     COLS = ["Data", "Voce", "Dettaglio", "Importo", "Categoria", "Sotto-categoria", "Escludi"]
@@ -32,6 +34,31 @@ class TxTableModel(QAbstractTableModel):
             return self.COLS[section]
         return str(section + 1)
 
+    def _voice_display(self, row: dict) -> str:
+        alias = self.db.get_alias(row["voice_norm"], row["detail_norm"])
+        return alias if alias else (row["voice_raw"] or "")
+
+    def _sort_key(self, row: dict, column: int):
+        if column == 0:
+            return row["date_value"] or ""
+        if column == 1:
+            return self._voice_display(row).lower()
+        if column == 2:
+            return (row["detail_raw"] or "").lower()
+        if column == 3:
+            amount = str(row["amount"] or "0").replace(",", ".")
+            try:
+                return float(amount)
+            except ValueError:
+                return 0.0
+        if column == 4:
+            return (row["category_name"] or "").lower()
+        if column == 5:
+            return (row["subcategory_name"] or "").lower()
+        if column == 6:
+            return int(row["excluded"])
+        return ""
+
     def data(self, index, role=Qt.DisplayRole):
         if not index.isValid():
             return None
@@ -40,15 +67,18 @@ class TxTableModel(QAbstractTableModel):
         c = index.column()
 
         if role == Qt.DisplayRole:
-            if c == 0: return r["date_value"] or ""
+            if c == 0:
+                return r["date_value"] or ""
             if c == 1:
-                # alias is on (voice_norm, detail_norm)
-                alias = self.db.get_alias(r["voice_norm"], r["detail_norm"])
-                return alias if alias else (r["voice_raw"] or "")
-            if c == 2: return r["detail_raw"] or ""
-            if c == 3: return r["amount"] or ""
-            if c == 4: return r["category_name"] or ""
-            if c == 5: return r["subcategory_name"] or ""
+                return self._voice_display(r)
+            if c == 2:
+                return r["detail_raw"] or ""
+            if c == 3:
+                return r["amount"] or ""
+            if c == 4:
+                return r["category_name"] or ""
+            if c == 5:
+                return r["subcategory_name"] or ""
 
         if role == Qt.CheckStateRole and c == 6:
             return Qt.Checked if int(r["excluded"]) == 1 else Qt.Unchecked
@@ -76,6 +106,12 @@ class TxTableModel(QAbstractTableModel):
             return True
         return False
 
+    def sort(self, column, order=Qt.AscendingOrder):
+        self.layoutAboutToBeChanged.emit()
+        reverse = order == Qt.DescendingOrder
+        self.rows.sort(key=lambda row: self._sort_key(row, column), reverse=reverse)
+        self.layoutChanged.emit()
+
     def set_rows(self, rows):
         self.beginResetModel()
         self.rows = list(rows)
@@ -83,6 +119,7 @@ class TxTableModel(QAbstractTableModel):
 
     def get_row(self, i: int):
         return self.rows[i]
+
 
 class MainWindow(QMainWindow):
     def __init__(self, db: DB):
@@ -100,7 +137,6 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(root)
         root_layout = QVBoxLayout(root)
 
-        # Top bar
         top = QHBoxLayout()
 
         self.btn_import = QPushButton("Importa CSV…")
@@ -128,13 +164,13 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Horizontal)
         root_layout.addWidget(splitter, 1)
 
-        # Left: table + chart
         left = QWidget()
         left_layout = QVBoxLayout(left)
 
         self.table = QTableView()
         self.table.setSelectionBehavior(QTableView.SelectRows)
         self.table.setSelectionMode(QTableView.SingleSelection)
+        self.table.setSortingEnabled(True)
         self.table.clicked.connect(self.on_row_selected)
         left_layout.addWidget(self.table, 3)
 
@@ -143,14 +179,15 @@ class MainWindow(QMainWindow):
 
         splitter.addWidget(left)
 
-        # Right: edit panel
         right = QWidget()
         form = QFormLayout(right)
 
         self.txt_voice = QLineEdit()
-        self.txt_voice.setReadOnly(True)
         self.txt_detail = QLineEdit()
         self.txt_detail.setReadOnly(True)
+
+        self.btn_rename_voice = QPushButton("Rinomina voce")
+        self.btn_rename_voice.clicked.connect(self.on_rename_voice)
 
         self.txt_alias = QLineEdit()
         self.btn_save_alias = QPushButton("Salva alias (Voce+Dettaglio)")
@@ -166,8 +203,13 @@ class MainWindow(QMainWindow):
 
         self.btn_add_cat = QPushButton("Nuova categoria…")
         self.btn_add_cat.clicked.connect(self.on_add_category)
+        self.btn_rename_cat = QPushButton("Rinomina categoria…")
+        self.btn_rename_cat.clicked.connect(self.on_rename_category)
+
         self.btn_add_sub = QPushButton("Nuova sotto-categoria…")
         self.btn_add_sub.clicked.connect(self.on_add_subcategory)
+        self.btn_rename_sub = QPushButton("Rinomina sotto-categoria…")
+        self.btn_rename_sub.clicked.connect(self.on_rename_subcategory)
 
         self.chk_excl = QCheckBox("Escludi dal calcolo")
         self.chk_excl.stateChanged.connect(self.on_excl_changed_from_panel)
@@ -176,12 +218,15 @@ class MainWindow(QMainWindow):
         self.btn_apply.clicked.connect(self.on_apply_category)
 
         form.addRow("Voce:", self.txt_voice)
+        form.addRow("", self.btn_rename_voice)
         form.addRow("Dettaglio:", self.txt_detail)
         form.addRow("Alias:", alias_row)
         form.addRow("Categoria:", self.cmb_cat)
         form.addRow("", self.btn_add_cat)
+        form.addRow("", self.btn_rename_cat)
         form.addRow("Sotto-categoria:", self.cmb_sub)
         form.addRow("", self.btn_add_sub)
+        form.addRow("", self.btn_rename_sub)
         form.addRow("", self.chk_excl)
         form.addRow("", self.btn_apply)
 
@@ -196,19 +241,25 @@ class MainWindow(QMainWindow):
         self.refresh_filter_combo()
         self.refresh_view()
 
-    # ---------- refresh ----------
     def refresh_categories(self):
         cats = self.db.list_categories()
+        current_cat_id = self.cmb_cat.currentData()
+
         self.cmb_cat.blockSignals(True)
         self.cmb_cat.clear()
         self.cmb_cat.addItem("—", None)
         for c in cats:
             self.cmb_cat.addItem(c["name"], int(c["id"]))
+        if current_cat_id is not None:
+            idx = self.cmb_cat.findData(int(current_cat_id))
+            self.cmb_cat.setCurrentIndex(idx if idx >= 0 else 0)
         self.cmb_cat.blockSignals(False)
         self.refresh_subcategories()
 
     def refresh_subcategories(self):
         cat_id = self.cmb_cat.currentData()
+        current_sub_id = self.cmb_sub.currentData()
+
         self.cmb_sub.blockSignals(True)
         self.cmb_sub.clear()
         self.cmb_sub.addItem("—", None)
@@ -216,10 +267,12 @@ class MainWindow(QMainWindow):
             subs = self.db.list_subcategories(int(cat_id))
             for s in subs:
                 self.cmb_sub.addItem(s["name"], int(s["id"]))
+        if current_sub_id is not None:
+            idx = self.cmb_sub.findData(int(current_sub_id))
+            self.cmb_sub.setCurrentIndex(idx if idx >= 0 else 0)
         self.cmb_sub.blockSignals(False)
 
     def refresh_filter_combo(self):
-        # Keep current selection if possible
         prev = self.cmb_cat_filter.currentData()
         self.cmb_cat_filter.blockSignals(True)
         self.cmb_cat_filter.clear()
@@ -229,7 +282,6 @@ class MainWindow(QMainWindow):
             self.cmb_cat_filter.addItem(f"Solo: {c['name']}", ("CAT", int(c["id"])))
         self.cmb_cat_filter.blockSignals(False)
 
-        # restore selection
         idx = -1
         for i in range(self.cmb_cat_filter.count()):
             if self.cmb_cat_filter.itemData(i) == prev:
@@ -258,7 +310,6 @@ class MainWindow(QMainWindow):
         labels, values = build_pie_by_category(rows)
         self.chart.set_data(labels, values)
 
-    # ---------- events ----------
     def on_filter_changed(self):
         mode, cid = self.cmb_cat_filter.currentData()
         if mode == "UNCAT":
@@ -271,7 +322,7 @@ class MainWindow(QMainWindow):
             self.uncategorized_filter = False
             self.category_filter = None
 
-        self.show_excluded = (self.chk_show_excl.checkState() == Qt.Checked)
+        self.show_excluded = self.chk_show_excl.checkState() == Qt.Checked
         self.refresh_view()
 
     def on_import(self):
@@ -281,11 +332,10 @@ class MainWindow(QMainWindow):
 
         preview = preview_import(self.db, path)
 
-        # Show duplicates before discarding
         if preview.duplicates:
             dlg = DuplicatesPreviewDialog(self, preview.duplicates)
             if dlg.exec() != dlg.Accepted or not dlg.proceed:
-                return  # cancel import
+                return
 
         inserted = 0
         for row in preview.to_insert:
@@ -307,16 +357,13 @@ class MainWindow(QMainWindow):
         self.txt_voice.setText(row["voice_raw"] or "")
         self.txt_detail.setText(row["detail_raw"] or "")
 
-        # show current alias (if any)
         alias = self.db.get_alias(row["voice_norm"], row["detail_norm"])
         self.txt_alias.setText(alias or "")
 
-        # excluded checkbox
         self.chk_excl.blockSignals(True)
         self.chk_excl.setChecked(int(row["excluded"]) == 1)
         self.chk_excl.blockSignals(False)
 
-        # category combo
         cat_id = row["category_id"]
         sub_id = row["subcategory_id"]
 
@@ -365,6 +412,27 @@ class MainWindow(QMainWindow):
             self.refresh_filter_combo()
             self.refresh_view()
 
+    def on_rename_category(self):
+        cat_id = self.cmb_cat.currentData()
+        if cat_id is None:
+            QMessageBox.information(self, "Categoria", "Seleziona prima una categoria.")
+            return
+
+        current_name = self.cmb_cat.currentText()
+        new_name, ok = QInputDialog.getText(self, "Rinomina categoria", "Nuovo nome:", text=current_name)
+        if not ok or not new_name.strip():
+            return
+
+        try:
+            self.db.rename_category(int(cat_id), new_name.strip())
+        except sqlite3.IntegrityError:
+            QMessageBox.warning(self, "Categoria", "Esiste già una categoria con questo nome.")
+            return
+
+        self.refresh_categories()
+        self.refresh_filter_combo()
+        self.refresh_view()
+
     def on_add_subcategory(self):
         cat_id = self.cmb_cat.currentData()
         if cat_id is None:
@@ -373,9 +441,42 @@ class MainWindow(QMainWindow):
         name, ok = QInputDialog.getText(self, "Nuova sotto-categoria", "Nome sotto-categoria:")
         if ok and name.strip():
             self.db.add_subcategory(int(cat_id), name.strip())
-            # IMPORTANT: refresh and keep selection
             self.refresh_subcategories()
             self.refresh_view()
+
+    def on_rename_subcategory(self):
+        sub_id = self.cmb_sub.currentData()
+        if sub_id is None:
+            QMessageBox.information(self, "Sotto-categoria", "Seleziona prima una sotto-categoria.")
+            return
+
+        current_name = self.cmb_sub.currentText()
+        new_name, ok = QInputDialog.getText(self, "Rinomina sotto-categoria", "Nuovo nome:", text=current_name)
+        if not ok or not new_name.strip():
+            return
+
+        try:
+            self.db.rename_subcategory(int(sub_id), new_name.strip())
+        except sqlite3.IntegrityError:
+            QMessageBox.warning(self, "Sotto-categoria", "Esiste già una sotto-categoria con questo nome.")
+            return
+
+        self.refresh_subcategories()
+        self.refresh_view()
+
+    def on_rename_voice(self):
+        if not self.current_tx_id:
+            QMessageBox.information(self, "Voce", "Seleziona prima una transazione.")
+            return
+
+        new_voice = self.txt_voice.text().strip()
+        if not new_voice:
+            QMessageBox.information(self, "Voce", "Inserisci una voce valida.")
+            return
+
+        voice_norm = normalize_text(new_voice)
+        self.db.rename_voice(self.current_tx_id, new_voice, voice_norm)
+        self.refresh_view()
 
     def on_save_alias(self):
         if not self.current_tx_id:
@@ -386,7 +487,6 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Alias", "Inserisci un alias.")
             return
 
-        # Need norms for current row
         idxs = self.table.selectionModel().selectedRows()
         if not idxs:
             return
@@ -397,6 +497,5 @@ class MainWindow(QMainWindow):
 
         self.db.upsert_alias(voice_norm, detail_norm, alias_value)
 
-        # Alias is applied automatically on display for all matching (voice_norm, detail_norm)
         self.refresh_view()
         QMessageBox.information(self, "Alias", "Alias salvato e applicato a tutte le voci uguali (Voce+Dettaglio).")
