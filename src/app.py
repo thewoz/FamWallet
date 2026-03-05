@@ -6,12 +6,31 @@ from db import DB
 from ui.main_window import MainWindow
 
 def choose_db_path() -> Optional[str]:
-    # Let user pick an existing .db or type a new one
+    choice = QMessageBox.question(
+        None,
+        "Progetto",
+        "Vuoi aprire un progetto esistente o crearne uno nuovo?",
+        QMessageBox.Open | QMessageBox.Save | QMessageBox.Cancel,
+        QMessageBox.Open,
+    )
+
+    if choice == QMessageBox.Cancel:
+        return None
+
+    if choice == QMessageBox.Open:
+        path, _ = QFileDialog.getOpenFileName(
+            None,
+            "Apri progetto (database)",
+            "",
+            "Database SQLite (*.db);;Tutti i file (*.*)",
+        )
+        return path or None
+
     path, _ = QFileDialog.getSaveFileName(
         None,
-        "Apri o crea progetto (database)",
+        "Crea nuovo progetto (database)",
         "spese.db",
-        "Database SQLite (*.db)"
+        "Database SQLite (*.db)",
     )
     return path or None
 
