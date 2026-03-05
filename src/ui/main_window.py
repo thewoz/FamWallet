@@ -130,7 +130,6 @@ class MainWindow(QMainWindow):
         self.category_filter = None
         self.uncategorized_filter = False
         self.show_excluded = False
-        self.exclude_category_name = "Eliminati"
 
         self.setWindowTitle(f"Spese (progetto: {db.path})")
 
@@ -304,12 +303,6 @@ class MainWindow(QMainWindow):
         self.refresh_stats(rows)
         self.refresh_chart(rows)
 
-    def _exclude_category_id(self):
-        for c in self.db.list_categories():
-            if c["name"] == self.exclude_category_name:
-                return int(c["id"])
-        return None
-
     def _selected_transaction_ids(self):
         indexes = self.table.selectionModel().selectedRows() if self.table.selectionModel() else []
         return [int(self.model.get_row(idx.row())["id"]) for idx in indexes]
@@ -403,12 +396,6 @@ class MainWindow(QMainWindow):
         tx_id = int(row["id"])
         excluded = int(row["excluded"]) == 1
         self.db.update_excluded(tx_id, excluded)
-        exclude_category_id = self._exclude_category_id()
-        if exclude_category_id is not None:
-            if excluded:
-                self.db.update_category(tx_id, exclude_category_id, None)
-            elif row["category_id"] == exclude_category_id:
-                self.db.update_category(tx_id, None, None)
         self.refresh_view()
 
     def on_apply_category(self):
@@ -426,12 +413,6 @@ class MainWindow(QMainWindow):
 
         normalized_sub_id = int(sub_id) if sub_id is not None else None
         self.db.bulk_update_category(selected_ids, int(cat_id), normalized_sub_id)
-        exclude_category_id = self._exclude_category_id()
-        if exclude_category_id is not None:
-            if int(cat_id) == exclude_category_id:
-                self.db.bulk_update_excluded(selected_ids, True)
-            else:
-                self.db.bulk_update_excluded(selected_ids, False)
 
         if len(selected_ids) == 1:
             similar_rows = self.db.find_similar_transactions(selected_ids[0])
