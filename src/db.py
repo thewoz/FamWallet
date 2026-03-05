@@ -279,8 +279,14 @@ class DB:
 
     def update_excluded(self, tx_id: int, excluded: bool):
         self.conn.execute(
-            "UPDATE transactions SET excluded=? WHERE id=?",
-            (1 if excluded else 0, tx_id)
+            """
+            UPDATE transactions
+            SET excluded=?,
+                category_id=CASE WHEN ?=1 THEN NULL ELSE category_id END,
+                subcategory_id=CASE WHEN ?=1 THEN NULL ELSE subcategory_id END
+            WHERE id=?
+            """,
+            (1 if excluded else 0, 1 if excluded else 0, 1 if excluded else 0, tx_id)
         )
         self.conn.commit()
 
@@ -308,8 +314,14 @@ class DB:
             return
         placeholders = ",".join(["?"] * len(ids))
         self.conn.execute(
-            f"UPDATE transactions SET excluded=? WHERE id IN ({placeholders})",
-            [1 if excluded else 0, *ids]
+            f"""
+            UPDATE transactions
+            SET excluded=?,
+                category_id=CASE WHEN ?=1 THEN NULL ELSE category_id END,
+                subcategory_id=CASE WHEN ?=1 THEN NULL ELSE subcategory_id END
+            WHERE id IN ({placeholders})
+            """,
+            [1 if excluded else 0, 1 if excluded else 0, 1 if excluded else 0, *ids]
         )
         self.conn.commit()
 

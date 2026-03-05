@@ -214,6 +214,9 @@ class MainWindow(QMainWindow):
         self.btn_apply = QPushButton("Applica categoria")
         self.btn_apply.clicked.connect(self.on_apply_category)
 
+        self.btn_exclude = QPushButton("Escludi voce selezionata")
+        self.btn_exclude.clicked.connect(self.on_exclude_selected)
+
         form.addRow("Voce:", self.txt_voice)
         form.addRow("", self.btn_rename_voice)
         form.addRow("Dettaglio:", self.txt_detail)
@@ -225,6 +228,7 @@ class MainWindow(QMainWindow):
         form.addRow("", self.btn_add_sub)
         form.addRow("", self.btn_rename_sub)
         form.addRow("", self.btn_apply)
+        form.addRow("", self.btn_exclude)
 
         splitter.addWidget(right)
         splitter.setSizes([950, 450])
@@ -421,6 +425,17 @@ class MainWindow(QMainWindow):
                 if dlg.exec() and dlg.selected_ids:
                     self.db.bulk_update_category(dlg.selected_ids, int(cat_id), normalized_sub_id)
 
+        self.refresh_view()
+
+    def on_exclude_selected(self):
+        selected_indexes = self.table.selectionModel().selectedRows() if self.table.selectionModel() else []
+        selected_ids = [int(self.model.get_row(idx.row())["id"]) for idx in selected_indexes]
+
+        if not selected_ids:
+            QMessageBox.information(self, "Escludi", "Seleziona prima una transazione.")
+            return
+
+        self.db.bulk_update_excluded(selected_ids, True)
         self.refresh_view()
 
     def on_add_category(self):
