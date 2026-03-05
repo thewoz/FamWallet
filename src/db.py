@@ -274,3 +274,21 @@ class DB:
             (row["voice_norm"], int(tx_id))
         ).fetchall()
         return [int(r["id"]) for r in results]
+
+    def find_similar_transactions(self, tx_id: int):
+        row = self.conn.execute(
+            "SELECT voice_norm FROM transactions WHERE id=?",
+            (int(tx_id),)
+        ).fetchone()
+        if not row:
+            return []
+
+        return self.conn.execute(
+            """
+            SELECT id, date_value, voice_raw, detail_raw, amount
+            FROM transactions
+            WHERE voice_norm=? AND id<>?
+            ORDER BY date_value DESC, id DESC
+            """,
+            (row["voice_norm"], int(tx_id))
+        ).fetchall()

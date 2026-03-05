@@ -10,7 +10,7 @@ from db import DB
 from importer import preview_import
 from normalizer import normalize_text
 from charts import PieChartWidget, build_pie_by_category
-from ui.dialogs import DuplicatesPreviewDialog
+from ui.dialogs import DuplicatesPreviewDialog, SimilarTransactionsDialog
 
 
 class TxTableModel(QAbstractTableModel):
@@ -434,17 +434,11 @@ class MainWindow(QMainWindow):
                 self.db.bulk_update_excluded(selected_ids, False)
 
         if len(selected_ids) == 1:
-            similar_ids = self.db.find_similar_transaction_ids(selected_ids[0])
-            if similar_ids:
-                confirm = QMessageBox.question(
-                    self,
-                    "Voci simili trovate",
-                    f"Ho trovato {len(similar_ids)} voci simili. Vuoi applicare la stessa categoria anche a quelle?",
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.Yes,
-                )
-                if confirm == QMessageBox.Yes:
-                    self.db.bulk_update_category(similar_ids, int(cat_id), normalized_sub_id)
+            similar_rows = self.db.find_similar_transactions(selected_ids[0])
+            if similar_rows:
+                dlg = SimilarTransactionsDialog(self, similar_rows)
+                if dlg.exec() and dlg.selected_ids:
+                    self.db.bulk_update_category(dlg.selected_ids, int(cat_id), normalized_sub_id)
 
         self.refresh_view()
 
