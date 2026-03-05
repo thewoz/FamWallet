@@ -75,7 +75,19 @@ class DB:
 
     def _seed_defaults(self):
         cur = self.conn.cursor()
-        for name in ["Alimentari", "Casa", "Escludi"]:
+        default_categories = [
+            "Casa",
+            "Trasporti",
+            "Investimenti",
+            "Banca",
+            "Eliminati",
+            "Alimentari",
+            "Svago",
+            "Vestiti",
+            "Bambini",
+            "Regali",
+        ]
+        for name in default_categories:
             cur.execute("INSERT OR IGNORE INTO categories(name, active) VALUES(?, 1)", (name,))
         self.conn.commit()
 
@@ -86,11 +98,14 @@ class DB:
         ).fetchall()
 
     def add_category(self, name: str):
+        clean_name = name.strip()
         self.conn.execute(
             "INSERT OR IGNORE INTO categories(name, active) VALUES(?, 1)",
-            (name.strip(),)
+            (clean_name,)
         )
         self.conn.commit()
+        row = self.conn.execute("SELECT id FROM categories WHERE name=?", (clean_name,)).fetchone()
+        return int(row["id"]) if row else None
 
     def rename_category(self, category_id: int, new_name: str):
         self.conn.execute(
@@ -106,11 +121,17 @@ class DB:
         ).fetchall()
 
     def add_subcategory(self, category_id: int, name: str):
+        clean_name = name.strip()
         self.conn.execute(
             "INSERT OR IGNORE INTO subcategories(category_id, name, active) VALUES(?, ?, 1)",
-            (category_id, name.strip())
+            (category_id, clean_name)
         )
         self.conn.commit()
+        row = self.conn.execute(
+            "SELECT id FROM subcategories WHERE category_id=? AND name=?",
+            (category_id, clean_name)
+        ).fetchone()
+        return int(row["id"]) if row else None
 
     def rename_subcategory(self, subcategory_id: int, new_name: str):
         self.conn.execute(

@@ -129,8 +129,8 @@ class MainWindow(QMainWindow):
         self.current_tx_id = None
         self.category_filter = None
         self.uncategorized_filter = False
-        self.show_excluded = True
-        self.exclude_category_name = "Escludi"
+        self.show_excluded = False
+        self.exclude_category_name = "Eliminati"
 
         self.setWindowTitle(f"Spese (progetto: {db.path})")
 
@@ -152,7 +152,7 @@ class MainWindow(QMainWindow):
         top.addWidget(self.cmb_cat_filter)
 
         self.chk_show_excl = QCheckBox("Mostra esclusi")
-        self.chk_show_excl.setChecked(True)
+        self.chk_show_excl.setChecked(False)
         self.chk_show_excl.stateChanged.connect(self.on_filter_changed)
         top.addWidget(self.chk_show_excl)
 
@@ -445,8 +445,13 @@ class MainWindow(QMainWindow):
     def on_add_category(self):
         name, ok = QInputDialog.getText(self, "Nuova categoria", "Nome categoria:")
         if ok and name.strip():
-            self.db.add_category(name.strip())
+            category_id = self.db.add_category(name.strip())
             self.refresh_categories()
+            if category_id is not None:
+                idx = self.cmb_cat.findData(int(category_id))
+                if idx >= 0:
+                    self.cmb_cat.setCurrentIndex(idx)
+                    self.refresh_subcategories()
             self.refresh_filter_combo()
             self.refresh_view()
 
@@ -478,8 +483,12 @@ class MainWindow(QMainWindow):
             return
         name, ok = QInputDialog.getText(self, "Nuova sotto-categoria", "Nome sotto-categoria:")
         if ok and name.strip():
-            self.db.add_subcategory(int(cat_id), name.strip())
+            subcategory_id = self.db.add_subcategory(int(cat_id), name.strip())
             self.refresh_subcategories()
+            if subcategory_id is not None:
+                idx = self.cmb_sub.findData(int(subcategory_id))
+                if idx >= 0:
+                    self.cmb_sub.setCurrentIndex(idx)
             self.refresh_view()
 
     def on_rename_subcategory(self):
