@@ -50,11 +50,11 @@ class SimilarTransactionsDialog(QDialog):
     """
     def __init__(self, parent, similar_rows):
         super().__init__(parent)
-        self.setWindowTitle("Applica categoria a voci simili")
+        self.setWindowTitle("Applica categoria a movimenti simili")
         self.selected_ids = []
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Seleziona le voci simili a cui applicare la stessa categoria:"))
+        layout.addWidget(QLabel("Seleziona i movimenti con stessa Voce e stesso Dettaglio a cui applicare la stessa categoria:"))
 
         self.table = QTableWidget()
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)

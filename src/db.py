@@ -72,6 +72,7 @@ class DB:
         cur.executescript(SCHEMA_SQL)
         self.conn.commit()
         self._seed_defaults()
+        self._migrate_excluded_categories()
 
     def _seed_defaults(self):
         cur = self.conn.cursor()
@@ -80,7 +81,6 @@ class DB:
             "Trasporti",
             "Investimenti",
             "Banca",
-            "Eliminati",
             "Alimentari",
             "Svago",
             "Vestiti",
@@ -89,6 +89,35 @@ class DB:
         ]
         for name in default_categories:
             cur.execute("INSERT OR IGNORE INTO categories(name, active) VALUES(?, 1)", (name,))
+        self.conn.commit()
+
+
+    def _migrate_excluded_categories(self):
+        excluded_names = ("Eliminati", "Escludi")
+        placeholders = ",".join(["?"] * len(excluded_names))
+
+        rows = self.conn.execute(
+            f"SELECT id FROM categories WHERE name IN ({placeholders})",
+            excluded_names
+        ).fetchall()
+        if not rows:
+            return
+
+        category_ids = [int(row["id"]) for row in rows]
+        cat_placeholders = ",".join(["?"] * len(category_ids))
+
+        self.conn.execute(
+            f"""
+            UPDATE transactions
+            SET excluded=1, category_id=NULL, subcategory_id=NULL
+            WHERE category_id IN ({cat_placeholders})
+            """,
+            category_ids
+        )
+        self.conn.execute(
+            f"UPDATE categories SET active=0 WHERE id IN ({cat_placeholders})",
+            category_ids
+        )
         self.conn.commit()
 
     # ---------- categories ----------
@@ -239,7 +268,9 @@ class DB:
             sql += " AND t.category_id=?"
             params.append(int(category_filter))
 
-        if not show_excluded:
+        if show_excluded:
+            sql += " AND t.excluded=1"
+        else:
             sql += " AND t.excluded=0"
 
         sql += " ORDER BY t.date_value DESC, t.id DESC"
@@ -284,21 +315,21 @@ class DB:
 
     def find_similar_transaction_ids(self, tx_id: int):
         row = self.conn.execute(
-            "SELECT voice_norm FROM transactions WHERE id=?",
+            "SELECT voice_norm, detail_norm FROM transactions WHERE id=?",
             (int(tx_id),)
         ).fetchone()
         if not row:
             return []
 
         results = self.conn.execute(
-            "SELECT id FROM transactions WHERE voice_norm=? AND id<>?",
-            (row["voice_norm"], int(tx_id))
+            "SELECT id FROM transactions WHERE voice_norm=? AND detail_norm=? AND id<>?",
+            (row["voice_norm"], row["detail_norm"], int(tx_id))
         ).fetchall()
         return [int(r["id"]) for r in results]
 
     def find_similar_transactions(self, tx_id: int):
         row = self.conn.execute(
-            "SELECT voice_norm FROM transactions WHERE id=?",
+            "SELECT voice_norm, detail_norm FROM transactions WHERE id=?",
             (int(tx_id),)
         ).fetchone()
         if not row:
@@ -308,8 +339,8 @@ class DB:
             """
             SELECT id, date_value, voice_raw, detail_raw, amount
             FROM transactions
-            WHERE voice_norm=? AND id<>?
+            WHERE voice_norm=? AND detail_norm=? AND id<>?
             ORDER BY date_value DESC, id DESC
             """,
-            (row["voice_norm"], int(tx_id))
+            (row["voice_norm"], row["detail_norm"], int(tx_id))
         ).fetchall()
