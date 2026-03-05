@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (
     QLabel, QComboBox, QCheckBox, QSplitter, QTableView, QFormLayout,
     QLineEdit, QMessageBox, QInputDialog
 )
-from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex
+from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex, QItemSelectionModel
 import sqlite3
 
 from db import DB
@@ -169,7 +169,7 @@ class MainWindow(QMainWindow):
 
         self.table = QTableView()
         self.table.setSelectionBehavior(QTableView.SelectRows)
-        self.table.setSelectionMode(QTableView.SingleSelection)
+        self.table.setSelectionMode(QTableView.ExtendedSelection)
         self.table.setSortingEnabled(True)
         self.table.clicked.connect(self.on_row_selected)
         left_layout.addWidget(self.table, 3)
@@ -290,15 +290,36 @@ class MainWindow(QMainWindow):
         self.cmb_cat_filter.setCurrentIndex(idx if idx >= 0 else 0)
 
     def refresh_view(self):
+        selected_ids = self._selected_transaction_ids()
+        sort_col = self.table.horizontalHeader().sortIndicatorSection()
+        sort_order = self.table.horizontalHeader().sortIndicatorOrder()
+
         rows = self.db.fetch_transactions(
             category_filter=self.category_filter,
             uncategorized=self.uncategorized_filter,
             show_excluded=self.show_excluded,
         )
         self.model.set_rows(rows)
+        if self.table.isSortingEnabled() and sort_col >= 0:
+            self.table.sortByColumn(sort_col, sort_order)
         self.table.resizeColumnsToContents()
+        self._restore_selection_by_ids(selected_ids)
         self.refresh_stats(rows)
         self.refresh_chart(rows)
+
+    def _selected_transaction_ids(self):
+        indexes = self.table.selectionModel().selectedRows() if self.table.selectionModel() else []
+        return [int(self.model.get_row(idx.row())["id"]) for idx in indexes]
+
+    def _restore_selection_by_ids(self, tx_ids):
+        if not tx_ids or not self.table.selectionModel():
+            return
+        selected = set(int(tx_id) for tx_id in tx_ids)
+        selection_model = self.table.selectionModel()
+        for row_idx, row in enumerate(self.model.rows):
+            if int(row["id"]) in selected:
+                idx = self.model.index(row_idx, 0)
+                selection_model.select(idx, QItemSelectionModel.Select | QItemSelectionModel.Rows)
 
     def refresh_stats(self, rows):
         total = len(rows)
@@ -393,7 +414,10 @@ class MainWindow(QMainWindow):
         self.refresh_view()
 
     def on_apply_category(self):
-        if not self.current_tx_id:
+        selected_indexes = self.table.selectionModel().selectedRows() if self.table.selectionModel() else []
+        selected_ids = [int(self.model.get_row(idx.row())["id"]) for idx in selected_indexes]
+
+        if not selected_ids:
             QMessageBox.information(self, "Categoria", "Seleziona prima una transazione.")
             return
         cat_id = self.cmb_cat.currentData()
@@ -401,7 +425,23 @@ class MainWindow(QMainWindow):
         if cat_id is None:
             QMessageBox.information(self, "Categoria", "Seleziona una categoria.")
             return
-        self.db.update_category(self.current_tx_id, int(cat_id), int(sub_id) if sub_id is not None else None)
+
+        normalized_sub_id = int(sub_id) if sub_id is not None else None
+        self.db.bulk_update_category(selected_ids, int(cat_id), normalized_sub_id)
+
+        if len(selected_ids) == 1:
+            similar_ids = self.db.find_similar_transaction_ids(selected_ids[0])
+            if similar_ids:
+                confirm = QMessageBox.question(
+                    self,
+                    "Voci simili trovate",
+                    f"Ho trovato {len(similar_ids)} voci simili. Vuoi applicare la stessa categoria anche a quelle?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.Yes,
+                )
+                if confirm == QMessageBox.Yes:
+                    self.db.bulk_update_category(similar_ids, int(cat_id), normalized_sub_id)
+
         self.refresh_view()
 
     def on_add_category(self):
