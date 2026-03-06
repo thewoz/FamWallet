@@ -13,6 +13,13 @@ from charts import PieChartWidget, build_pie
 from ui.dialogs import DuplicatesPreviewDialog, SimilarTransactionsDialog
 
 
+class ReliableComboBox(QComboBox):
+    def mousePressEvent(self, event):
+        super().mousePressEvent(event)
+        if not self.view().isVisible():
+            self.showPopup()
+
+
 class TxTableModel(QAbstractTableModel):
     COLS = ["Data", "Voce", "Dettaglio", "Importo", "Categoria", "Sotto-categoria", "Escludi"]
 
@@ -146,7 +153,7 @@ class MainWindow(QMainWindow):
         top.addSpacing(12)
         top.addWidget(QLabel("Filtro:"))
 
-        self.cmb_cat_filter = QComboBox()
+        self.cmb_cat_filter = ReliableComboBox()
         self.cmb_cat_filter.currentIndexChanged.connect(self.on_filter_changed)
         top.addWidget(self.cmb_cat_filter)
 
@@ -214,6 +221,8 @@ class MainWindow(QMainWindow):
         self.btn_rename_sub.clicked.connect(self.on_rename_subcategory)
         self.btn_delete_sub = QPushButton("Cancella sotto-categoria…")
         self.btn_delete_sub.clicked.connect(self.on_delete_subcategory)
+        self.btn_merge_sub = QPushButton("Unisci sotto-categorie…")
+        self.btn_merge_sub.clicked.connect(self.on_merge_subcategory)
 
         self.btn_apply = QPushButton("Applica categoria")
         self.btn_apply.clicked.connect(self.on_apply_category)
@@ -233,6 +242,7 @@ class MainWindow(QMainWindow):
         form.addRow("", self.btn_add_sub)
         form.addRow("", self.btn_rename_sub)
         form.addRow("", self.btn_delete_sub)
+        form.addRow("", self.btn_merge_sub)
         form.addRow("", self.btn_apply)
         form.addRow("", self.btn_exclude)
 
@@ -334,7 +344,8 @@ class MainWindow(QMainWindow):
         self.lbl_stats.setText(f"Movimenti: {total} — Esclusi: {excl} — Senza categoria: {unc}")
 
     def refresh_chart(self, rows):
-        labels, values, legend_lines = build_pie(rows, self.category_filter)
+        span_days = self.db.expense_date_span_days()
+        labels, values, legend_lines = build_pie(rows, self.category_filter, span_days)
         self.chart.set_data(labels, values, legend_lines)
 
     def on_filter_changed(self):
@@ -556,6 +567,46 @@ class MainWindow(QMainWindow):
 
         self.db.delete_subcategory(int(sub_id))
         self.refresh_subcategories()
+        self.refresh_view()
+
+    def on_merge_subcategory(self):
+        cat_id = self.cmb_cat.currentData()
+        source_sub_id = self.cmb_sub.currentData()
+        if cat_id is None:
+            QMessageBox.information(self, "Sotto-categoria", "Seleziona prima una categoria.")
+            return
+        if source_sub_id is None:
+            QMessageBox.information(self, "Sotto-categoria", "Seleziona la sotto-categoria da unire.")
+            return
+
+        subs = self.db.list_subcategories(int(cat_id))
+        target_choices = [s for s in subs if int(s["id"]) != int(source_sub_id)]
+        if not target_choices:
+            QMessageBox.information(self, "Sotto-categoria", "Serve almeno un'altra sotto-categoria di destinazione.")
+            return
+
+        names = [s["name"] for s in target_choices]
+        source_name = self.cmb_sub.currentText()
+        target_name, ok = QInputDialog.getItem(
+            self,
+            "Unisci sotto-categorie",
+            f"Scegli la destinazione per '{source_name}':",
+            names,
+            0,
+            False,
+        )
+        if not ok:
+            return
+
+        target_sub = next((s for s in target_choices if s["name"] == target_name), None)
+        if not target_sub:
+            return
+
+        self.db.merge_subcategories(int(source_sub_id), int(target_sub["id"]))
+        self.refresh_subcategories()
+        idx = self.cmb_sub.findData(int(target_sub["id"]))
+        if idx >= 0:
+            self.cmb_sub.setCurrentIndex(idx)
         self.refresh_view()
 
     def on_rename_voice(self):
