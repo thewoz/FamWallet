@@ -143,6 +143,21 @@ class DB:
         )
         self.conn.commit()
 
+    def delete_category(self, category_id: int):
+        self.conn.execute(
+            "UPDATE transactions SET category_id=NULL, subcategory_id=NULL WHERE category_id=?",
+            (category_id,)
+        )
+        self.conn.execute(
+            "UPDATE subcategories SET active=0 WHERE category_id=?",
+            (category_id,)
+        )
+        self.conn.execute(
+            "UPDATE categories SET active=0 WHERE id=?",
+            (category_id,)
+        )
+        self.conn.commit()
+
     def list_subcategories(self, category_id: int):
         return self.conn.execute(
             "SELECT id, name FROM subcategories WHERE category_id=? AND active=1 ORDER BY name",
@@ -166,6 +181,17 @@ class DB:
         self.conn.execute(
             "UPDATE subcategories SET name=? WHERE id=?",
             (new_name.strip(), subcategory_id)
+        )
+        self.conn.commit()
+
+    def delete_subcategory(self, subcategory_id: int):
+        self.conn.execute(
+            "UPDATE transactions SET subcategory_id=NULL WHERE subcategory_id=?",
+            (subcategory_id,)
+        )
+        self.conn.execute(
+            "UPDATE subcategories SET active=0 WHERE id=?",
+            (subcategory_id,)
         )
         self.conn.commit()
 
