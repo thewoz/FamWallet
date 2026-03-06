@@ -355,7 +355,7 @@ class MainWindow(QMainWindow):
 
         if preview.duplicates:
             dlg = DuplicatesPreviewDialog(self, preview.duplicates)
-            if dlg.exec() != dlg.Accepted or not dlg.proceed:
+            if not dlg.exec() or not dlg.proceed:
                 return
 
         inserted = 0
