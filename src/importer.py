@@ -72,6 +72,10 @@ def preview_import(db: DB, path: str) -> ImportPreview:
                     if db.is_duplicate(date_value, voice_norm, detail_norm, amount_norm):
                         duplicates.append((date_value, voice, detail, amount_str))
                     else:
+                        matched_category = db.get_category_for_voice_detail(voice_norm, detail_norm)
+                        category_id = int(matched_category["category_id"]) if matched_category and matched_category["category_id"] is not None else None
+                        subcategory_id = int(matched_category["subcategory_id"]) if matched_category and matched_category["subcategory_id"] is not None else None
+
                         to_insert.append({
                             "date_value": date_value,
                             "voice_raw": voice,
@@ -81,8 +85,8 @@ def preview_import(db: DB, path: str) -> ImportPreview:
                             "detail_norm": detail_norm,
                             "amount_norm": amount_norm,
                             "excluded": 0,
-                            "category_id": None,
-                            "subcategory_id": None,
+                            "category_id": category_id,
+                            "subcategory_id": subcategory_id,
                             "created_at": db.now_iso(),
                         })
 

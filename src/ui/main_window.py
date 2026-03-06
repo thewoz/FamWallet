@@ -10,7 +10,7 @@ from db import DB
 from importer import preview_import
 from normalizer import normalize_text
 from charts import PieChartWidget, build_pie
-from ui.dialogs import DuplicatesPreviewDialog, SimilarTransactionsDialog
+from ui.dialogs import DuplicatesPreviewDialog
 
 
 class ReliableComboBox(QComboBox):
@@ -344,9 +344,8 @@ class MainWindow(QMainWindow):
         self.lbl_stats.setText(f"Movimenti: {total} — Esclusi: {excl} — Senza categoria: {unc}")
 
     def refresh_chart(self, rows):
-        span_days = self.db.expense_date_span_days()
-        labels, values, legend_lines = build_pie(rows, self.category_filter, span_days)
-        self.chart.set_data(labels, values, legend_lines)
+        labels, values, legend_lines, title = build_pie(rows, self.category_filter)
+        self.chart.set_data(labels, values, legend_lines, title=title)
 
     def on_filter_changed(self):
         mode, cid = self.cmb_cat_filter.currentData()
@@ -421,9 +420,9 @@ class MainWindow(QMainWindow):
 
     def on_apply_category(self):
         selected_indexes = self.table.selectionModel().selectedRows() if self.table.selectionModel() else []
-        selected_ids = [int(self.model.get_row(idx.row())["id"]) for idx in selected_indexes]
+        selected_rows = [self.model.get_row(idx.row()) for idx in selected_indexes]
 
-        if not selected_ids:
+        if not selected_rows:
             QMessageBox.information(self, "Categoria", "Seleziona prima una transazione.")
             return
         cat_id = self.cmb_cat.currentData()
@@ -433,14 +432,13 @@ class MainWindow(QMainWindow):
             return
 
         normalized_sub_id = int(sub_id) if sub_id is not None else None
-        self.db.bulk_update_category(selected_ids, int(cat_id), normalized_sub_id)
-
-        if len(selected_ids) == 1:
-            similar_rows = self.db.find_similar_transactions(selected_ids[0])
-            if similar_rows:
-                dlg = SimilarTransactionsDialog(self, similar_rows)
-                if dlg.exec() and dlg.selected_ids:
-                    self.db.bulk_update_category(dlg.selected_ids, int(cat_id), normalized_sub_id)
+        for row in selected_rows:
+            self.db.bulk_update_category_by_voice_detail(
+                row["voice_norm"],
+                row["detail_norm"],
+                int(cat_id),
+                normalized_sub_id,
+            )
 
         self.refresh_view()
 
@@ -632,10 +630,9 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Alias", "Inserisci un alias.")
             return
 
-        idxs = self.table.selectionModel().selectedRows()
-        if not idxs:
+        row = next((r for r in self.model.rows if int(r["id"]) == int(self.current_tx_id)), None)
+        if row is None:
             return
-        row = self.model.get_row(idxs[0].row())
 
         voice_norm = row["voice_norm"]
         detail_norm = row["detail_norm"]

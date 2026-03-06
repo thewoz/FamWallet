@@ -269,6 +269,21 @@ class DB:
         ).fetchone()
         return row["alias_value"] if row else None
 
+    def get_category_for_voice_detail(self, voice_norm: str, detail_norm: str):
+        return self.conn.execute(
+            """
+            SELECT category_id, subcategory_id
+            FROM transactions
+            WHERE voice_norm=?
+              AND detail_norm=?
+              AND excluded=0
+              AND category_id IS NOT NULL
+            ORDER BY date_value DESC, id DESC
+            LIMIT 1
+            """,
+            (voice_norm, detail_norm)
+        ).fetchone()
+
     def rename_voice(self, tx_id: int, voice_raw: str, voice_norm: str):
         self.conn.execute(
             "UPDATE transactions SET voice_raw=?, voice_norm=? WHERE id=?",
@@ -382,6 +397,17 @@ class DB:
         self.conn.execute(
             f"UPDATE transactions SET category_id=?, subcategory_id=? WHERE id IN ({placeholders})",
             [category_id, subcategory_id, *ids]
+        )
+        self.conn.commit()
+
+    def bulk_update_category_by_voice_detail(self, voice_norm: str, detail_norm: str, category_id: Optional[int], subcategory_id: Optional[int]):
+        self.conn.execute(
+            """
+            UPDATE transactions
+            SET category_id=?, subcategory_id=?
+            WHERE voice_norm=? AND detail_norm=?
+            """,
+            (category_id, subcategory_id, voice_norm, detail_norm)
         )
         self.conn.commit()
 
