@@ -37,7 +37,7 @@ class PieChartWidget(FigureCanvas):
         self.draw()
 
 
-def build_pie(tx_rows, category_filter: Optional[int] = None):
+def build_pie(tx_rows, category_filter: Optional[int] = None, span_days: int = 30):
     """
     tx_rows are rows from DB.fetch_transactions.
     Uses only expenses (amount < 0) and not excluded rows.
@@ -49,7 +49,6 @@ def build_pie(tx_rows, category_filter: Optional[int] = None):
     """
     agg = defaultdict(Decimal)
     total = Decimal("0")
-    month_totals = defaultdict(Decimal)
 
     for r in tx_rows:
         if int(r["excluded"]) == 1:
@@ -68,24 +67,16 @@ def build_pie(tx_rows, category_filter: Optional[int] = None):
         agg[label] += value
         total += value
 
-        date_value = r["date_value"] or ""
-        month_key = date_value[:7] if len(date_value) >= 7 else ""
-        if month_key:
-            month_totals[(label, month_key)] += value
 
     labels = list(agg.keys())
     values = [float(v) for v in agg.values()]
-
-    months_count_by_label = defaultdict(int)
-    for (label, _month) in month_totals.keys():
-        months_count_by_label[label] += 1
 
     legend_lines = []
     for label in labels:
         amount_value = agg[label]
         pct = (amount_value / total * Decimal("100")) if total > 0 else Decimal("0")
-        months = months_count_by_label.get(label, 0)
-        monthly_estimate = (amount_value / Decimal(months)) if months > 0 else Decimal("0")
+        normalized_days = max(int(span_days or 30), 1)
+        monthly_estimate = (amount_value / Decimal(normalized_days)) * Decimal("30")
         legend_lines.append(
             f"{pct:.1f}% • €{amount_value:.2f} • ~€{monthly_estimate:.2f}/mese"
         )

@@ -195,9 +195,60 @@ class DB:
         )
         self.conn.commit()
 
+    def merge_subcategories(self, source_subcategory_id: int, target_subcategory_id: int):
+        source_id = int(source_subcategory_id)
+        target_id = int(target_subcategory_id)
+        if source_id == target_id:
+            return
+
+        source = self.conn.execute(
+            "SELECT category_id FROM subcategories WHERE id=? AND active=1",
+            (source_id,)
+        ).fetchone()
+        target = self.conn.execute(
+            "SELECT category_id FROM subcategories WHERE id=? AND active=1",
+            (target_id,)
+        ).fetchone()
+        if not source or not target:
+            return
+        if int(source["category_id"]) != int(target["category_id"]):
+            return
+
+        self.conn.execute(
+            "UPDATE transactions SET subcategory_id=? WHERE subcategory_id=?",
+            (target_id, source_id)
+        )
+        self.conn.execute(
+            "UPDATE subcategories SET active=0 WHERE id=?",
+            (source_id,)
+        )
+        self.conn.commit()
+
     def category_name_map(self):
         rows = self.conn.execute("SELECT id, name FROM categories WHERE active=1").fetchall()
         return {int(r["id"]): r["name"] for r in rows}
+
+    def expense_date_span_days(self) -> int:
+        row = self.conn.execute(
+            """
+            SELECT MIN(date_value) AS min_date, MAX(date_value) AS max_date
+            FROM transactions
+            WHERE excluded=0
+              AND date_value GLOB '____-__-__'
+              AND CAST(amount AS REAL) < 0
+            """
+        ).fetchone()
+        if not row or not row["min_date"] or not row["max_date"]:
+            return 30
+
+        try:
+            min_date = datetime.strptime(row["min_date"], "%Y-%m-%d").date()
+            max_date = datetime.strptime(row["max_date"], "%Y-%m-%d").date()
+        except ValueError:
+            return 30
+
+        elapsed_days = (max_date - min_date).days + 1
+        return max(elapsed_days, 1)
 
     # ---------- aliases (voice-detail) ----------
     def upsert_alias(self, voice_norm: str, detail_norm: str, alias_value: str):
