@@ -9,7 +9,7 @@ import sqlite3
 from db import DB
 from importer import preview_import
 from normalizer import normalize_text
-from charts import PieChartWidget, build_pie_by_category
+from charts import PieChartWidget, build_pie
 from ui.dialogs import DuplicatesPreviewDialog, SimilarTransactionsDialog
 
 
@@ -205,11 +205,15 @@ class MainWindow(QMainWindow):
         self.btn_add_cat.clicked.connect(self.on_add_category)
         self.btn_rename_cat = QPushButton("Rinomina categoria…")
         self.btn_rename_cat.clicked.connect(self.on_rename_category)
+        self.btn_delete_cat = QPushButton("Cancella categoria…")
+        self.btn_delete_cat.clicked.connect(self.on_delete_category)
 
         self.btn_add_sub = QPushButton("Nuova sotto-categoria…")
         self.btn_add_sub.clicked.connect(self.on_add_subcategory)
         self.btn_rename_sub = QPushButton("Rinomina sotto-categoria…")
         self.btn_rename_sub.clicked.connect(self.on_rename_subcategory)
+        self.btn_delete_sub = QPushButton("Cancella sotto-categoria…")
+        self.btn_delete_sub.clicked.connect(self.on_delete_subcategory)
 
         self.btn_apply = QPushButton("Applica categoria")
         self.btn_apply.clicked.connect(self.on_apply_category)
@@ -224,9 +228,11 @@ class MainWindow(QMainWindow):
         form.addRow("Categoria:", self.cmb_cat)
         form.addRow("", self.btn_add_cat)
         form.addRow("", self.btn_rename_cat)
+        form.addRow("", self.btn_delete_cat)
         form.addRow("Sotto-categoria:", self.cmb_sub)
         form.addRow("", self.btn_add_sub)
         form.addRow("", self.btn_rename_sub)
+        form.addRow("", self.btn_delete_sub)
         form.addRow("", self.btn_apply)
         form.addRow("", self.btn_exclude)
 
@@ -328,8 +334,8 @@ class MainWindow(QMainWindow):
         self.lbl_stats.setText(f"Movimenti: {total} — Esclusi: {excl} — Senza categoria: {unc}")
 
     def refresh_chart(self, rows):
-        labels, values = build_pie_by_category(rows)
-        self.chart.set_data(labels, values)
+        labels, values, legend_lines = build_pie(rows, self.category_filter)
+        self.chart.set_data(labels, values, legend_lines)
 
     def on_filter_changed(self):
         mode, cid = self.cmb_cat_filter.currentData()
@@ -472,6 +478,29 @@ class MainWindow(QMainWindow):
         self.refresh_filter_combo()
         self.refresh_view()
 
+
+    def on_delete_category(self):
+        cat_id = self.cmb_cat.currentData()
+        if cat_id is None:
+            QMessageBox.information(self, "Categoria", "Seleziona prima una categoria.")
+            return
+
+        name = self.cmb_cat.currentText()
+        confirm = QMessageBox.question(
+            self,
+            "Cancella categoria",
+            f"Vuoi davvero cancellare la categoria '{name}'?\nLe transazioni associate resteranno ma senza categoria.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+
+        self.db.delete_category(int(cat_id))
+        self.refresh_categories()
+        self.refresh_filter_combo()
+        self.refresh_view()
+
     def on_add_subcategory(self):
         cat_id = self.cmb_cat.currentData()
         if cat_id is None:
@@ -504,6 +533,28 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Sotto-categoria", "Esiste già una sotto-categoria con questo nome.")
             return
 
+        self.refresh_subcategories()
+        self.refresh_view()
+
+
+    def on_delete_subcategory(self):
+        sub_id = self.cmb_sub.currentData()
+        if sub_id is None:
+            QMessageBox.information(self, "Sotto-categoria", "Seleziona prima una sotto-categoria.")
+            return
+
+        name = self.cmb_sub.currentText()
+        confirm = QMessageBox.question(
+            self,
+            "Cancella sotto-categoria",
+            f"Vuoi davvero cancellare la sotto-categoria '{name}'?\nLe transazioni associate resteranno senza sotto-categoria.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+
+        self.db.delete_subcategory(int(sub_id))
         self.refresh_subcategories()
         self.refresh_view()
 
