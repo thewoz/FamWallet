@@ -1,5 +1,6 @@
 from decimal import Decimal
 from collections import defaultdict
+from datetime import datetime
 from typing import Optional
 
 from matplotlib.figure import Figure
@@ -13,15 +14,20 @@ class PieChartWidget(FigureCanvas):
         self.setParent(parent)
         self.ax = self.fig.add_subplot(111)
 
-    def set_data(self, labels, values, legend_lines=None):
+    def set_data(self, labels, values, legend_lines=None, title=None):
         self.ax.clear()
         if not labels or not values:
             self.ax.text(0.5, 0.5, "Nessun dato da mostrare", ha="center", va="center")
+            if title:
+                self.ax.set_title(title)
             self.draw()
             return
 
         wedges, _, _ = self.ax.pie(values, labels=labels, autopct="%1.1f%%", startangle=90)
         self.ax.axis("equal")
+
+        if title:
+            self.ax.set_title(title)
 
         if legend_lines:
             legend_labels = [f"{label} — {line}" for label, line in zip(labels, legend_lines)]
@@ -37,7 +43,7 @@ class PieChartWidget(FigureCanvas):
         self.draw()
 
 
-def build_pie(tx_rows, category_filter: Optional[int] = None, span_days: int = 30):
+def build_pie(tx_rows, category_filter: Optional[int] = None):
     """
     tx_rows are rows from DB.fetch_transactions.
     Uses only expenses (amount < 0) and not excluded rows.
@@ -45,10 +51,11 @@ def build_pie(tx_rows, category_filter: Optional[int] = None, span_days: int = 3
     If category_filter is set, the pie is grouped by subcategory.
     Otherwise, it is grouped by category.
 
-    Returns: labels, values, legend_lines.
+    Returns: labels, values, legend_lines, title.
     """
     agg = defaultdict(Decimal)
     total = Decimal("0")
+    month_keys = set()
 
     for r in tx_rows:
         if int(r["excluded"]) == 1:
@@ -67,18 +74,30 @@ def build_pie(tx_rows, category_filter: Optional[int] = None, span_days: int = 3
         agg[label] += value
         total += value
 
+        date_value = r["date_value"] or ""
+        try:
+            month_key = datetime.strptime(date_value, "%Y-%m-%d").strftime("%Y-%m")
+            month_keys.add(month_key)
+        except ValueError:
+            pass
 
     labels = list(agg.keys())
     values = [float(v) for v in agg.values()]
+
+    month_count = max(len(month_keys), 1)
 
     legend_lines = []
     for label in labels:
         amount_value = agg[label]
         pct = (amount_value / total * Decimal("100")) if total > 0 else Decimal("0")
-        normalized_days = max(int(span_days or 30), 1)
-        monthly_estimate = (amount_value / Decimal(normalized_days)) * Decimal("30")
+        monthly_estimate = amount_value / Decimal(month_count)
         legend_lines.append(
             f"{pct:.1f}% • €{amount_value:.2f} • ~€{monthly_estimate:.2f}/mese"
         )
 
-    return labels, values, legend_lines
+    title = None
+    if category_filter is None and total > 0:
+        total_monthly = total / Decimal(month_count)
+        title = f"Costo mensile totale stimato: €{total_monthly:.2f}"
+
+    return labels, values, legend_lines, title
